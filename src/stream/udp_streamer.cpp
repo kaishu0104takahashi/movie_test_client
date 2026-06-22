@@ -8,8 +8,12 @@ UdpStreamer::UdpStreamer(const std::string& dest_ip, int port) {
     avformat_network_init();
 
     // 送り先のURL（例: udp://100.76.x.x:1234?pkt_size=1316）
-    // pkt_size=1316 は「UDPの壁にぶつからない安全なサイズに切り刻んでね」というFFmpegへの重要なお願いです
-    std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + "?pkt_size=1316";
+    // pkt_size=1316 は「UDPの壁にぶつからない安全なサイズに切り刻んでね」というFFmpegへの重要なお願い
+    // 修正前（通常の有線LAN MTU=1500 用の設定になっていた）
+    //std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + "?pkt_size=1316";
+
+    // 修正後（Tailscale MTU=1280 環境における最適解）
+    std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + "?pkt_size=1128";
 
     // MPEG-TS形式で出力する設定を作成
     avformat_alloc_output_context2(&fmt_ctx_, nullptr, "mpegts", url.c_str());

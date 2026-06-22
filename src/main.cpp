@@ -21,13 +21,12 @@ int main() {
     int server_port = 1234;
     
     try {
-        // ① 全ての複雑な処理を内包した「ストリーム管理マシン」を生成
         //IPの変更
         //StreamThread stream(server_ip, server_port, 960, 720, 30, EncodeMode::Hardware_Pi4);
         //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Hardware_Pi4);
         StreamThread stream(server_ip, server_port, 640, 360, 30, EncodeMode::Hardware_Pi4);
         
-        // ② 裏方スレッドで配信スタート！
+        // スレッドで配信スタート
         stream.start();
 
         std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
