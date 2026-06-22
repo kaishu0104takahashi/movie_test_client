@@ -14,10 +14,7 @@
      ~PassThroughEncoder() override = default;
  
      // 親のルールを実装（データを右から左へコピーするだけ）
-     bool encode_frame(const std::vector<uint8_t>& in_data, std::vector<uint8_t>& out_data) override {
-         out_data = in_data;
-         return true;
-     }
+     bool encode_frame(const std::vector<uint8_t>& in_data, std::vector<uint8_t>& out_data) override;
  };
  
  #endif

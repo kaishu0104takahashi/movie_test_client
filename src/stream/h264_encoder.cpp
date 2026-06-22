@@ -22,7 +22,7 @@ H264Encoder::H264Encoder(int width, int height, int fps, const std::string& enco
 
     codec_ctx_->bit_rate = 1000000; // 2Mbps (数値を上げると高画質、下げると低遅延・軽量)
     
-    // ★遠隔操作EV用 超低遅延のおまじない（ソフトウェアモードの時に効きます）
+    // ★遠隔操作EV用 超低遅延のおまじない（ソフトウェアモード時のみ）
     AVDictionary *opt = nullptr;
     av_dict_set(&opt, "preset", "ultrafast", 0);
     av_dict_set(&opt, "tune", "zerolatency", 0);
@@ -63,6 +63,7 @@ H264Encoder::~H264Encoder() {
     if (codec_ctx_) avcodec_free_context(&codec_ctx_);
 }
 
+//ソフトウェアエンコーダ処理
 bool H264Encoder::encode_frame(const std::vector<uint8_t>& yuyv_data, std::vector<uint8_t>& out_h264_data) {
     // 1. カメラから来た生データをFFmpegの箱（frame_yuyv_）にコピー
     int expected_size = width_ * height_ * 2;

@@ -9,7 +9,7 @@ StreamThread::StreamThread(const std::string& server_ip, int server_port, int wi
 }
 
 StreamThread::~StreamThread() {
-    stop(); 
+    stop();
 }
 
 void StreamThread::start() {
@@ -20,15 +20,20 @@ void StreamThread::start() {
 void StreamThread::stop() {
     stop_flag_.store(true);
     if (worker_.joinable()) {
-        worker_.join(); 
+        worker_.join();
     }
 }
 
 void StreamThread::thread_loop() {
     try {
         std::cout << "[裏方スレッド] 部品を初期化中..." << std::endl;
-        
-        V4L2Capture camera("/dev/video0", width_, height_, V4L2Capture::frame_format::YUV422);
+
+        // モードに応じてカメラのフォーマットを切り替える
+        V4L2Capture::frame_format cam_fmt = (mode_ == EncodeMode::Camera_PassThrough) 
+                                            ? V4L2Capture::frame_format::H264 
+                                            : V4L2Capture::frame_format::YUV422;
+
+        V4L2Capture camera("/dev/video0", width_, height_, cam_fmt);
         UdpStreamer streamer(server_ip_, server_port_);
 
         // =======================================================

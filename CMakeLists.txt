@@ -1,4 +1,3 @@
-
 cmake_minimum_required(VERSION 3.20)
 
 project(movie_test_client LANGUAGES CXX)
@@ -28,6 +27,7 @@ set(SOURCE_FILES
     src/main.cpp
     src/camera/v4l2_capture.cpp
     src/stream/h264_encoder.cpp
+    src/stream/pass_through_encoder.cpp
     src/stream/udp_streamer.cpp
     src/stream/stream_thread.cpp
 )
