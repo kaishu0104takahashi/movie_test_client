@@ -12,7 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # 1. FFmpegライブラリ群の検索 (pkg-configを使用)
 #【外部業者の手配】 FFmpegやSDL2など「自分では作れない超便利な外部ツール」を探してきて！という指示
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavcodec libavformat libavutil libavdevice libswscale)
+pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavcodec libavformat libavutil libswscale)
 
 # 2. その他の必須ライブラリ
 find_package(SDL2 REQUIRED)

@@ -16,8 +16,8 @@ int main() {
     std::signal(SIGINT, signal_handler);
     std::cout << "--- 映像伝送 Client 起動 (マルチスレッド完全版) ---" << std::endl;
 
-    // コックピット側（Server）のTailscale IPアドレス
-    std::string server_ip = "100.111.56.107"; 
+    // IPアドレス
+    std::string server_ip = "100.67.192.60"; 
     int server_port = 1234;
     
     try {
