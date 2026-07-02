@@ -17,7 +17,8 @@ int main() {
     std::cout << "--- 映像伝送 Client 起動 (マルチスレッド完全版) ---" << std::endl;
 
     // IPアドレス
-    std::string server_ip = "100.67.192.60"; 
+    //std::string server_ip = "100.67.192.60";
+    std::string server_ip = "192.168.77.230"; 
     int server_port = 1234;
     
     try {
@@ -25,9 +26,6 @@ int main() {
         //StreamThread stream(server_ip, server_port, 960, 720, 30, EncodeMode::Hardware_Pi4);
         //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Hardware_Pi4);
         
-        // =================================================================================
-        // ★ 変更箇所：ラズパイ5へのシステム移行（モードの切り替え）
-        // =================================================================================
         // 第6引数のモード指定を EncodeMode::Hardware_Pi4 から EncodeMode::Software_Pi5 に
         // 
         // 【システム的な動作の連鎖】
@@ -37,7 +35,9 @@ int main() {
         //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
         // =================================================================================
         /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
-        StreamThread stream(server_ip, server_port, 640, 360, 30, EncodeMode::Software_Pi5);
+        StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Camera_PassThrough);
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Software_Pi5);
+        
         
         // スレッドで配信スタート
         stream.start();
