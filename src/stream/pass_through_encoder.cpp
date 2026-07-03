@@ -1,48 +1,43 @@
 #include "stream/pass_through_encoder.hpp"
-#include <stdexcept>
-#include <iostream>
+#include <cstring>
 
 PassThroughEncoder::PassThroughEncoder() {
-    // 1. 解析用（パース用）のコーデックを探す
-    const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_H264);
-    if (!codec) {
-        throw std::runtime_error("エラー: H.264パーサー用のコーデックが見つかりません");
-    }
-
-    // 2. パーサー（解析機）を初期化
-    parser_ = av_parser_init(codec->id);
-    if (!parser_) {
-        throw std::runtime_error("エラー: H.264パーサーの初期化に失敗しました");
-    }
-
-    codec_ctx_ = avcodec_alloc_context3(codec);
-    pkt_ = av_packet_alloc();
+    internal_pkt_ = av_packet_alloc();
 }
 
 PassThroughEncoder::~PassThroughEncoder() {
-    if (parser_) av_parser_close(parser_);
-    if (codec_ctx_) avcodec_free_context(&codec_ctx_);
-    if (pkt_) av_packet_free(&pkt_);
+    av_packet_free(&internal_pkt_);
 }
 
-bool PassThroughEncoder::encode_frame(const std::vector<uint8_t>& in_data, std::vector<uint8_t>& out_data) {
-    if (in_data.empty()) return false;
+bool PassThroughEncoder::send_frame(const uint8_t* in_data, size_t size) {
+    if (size == 0 || !in_data) return false;
 
-    // ★ここが魔法の処理：
-    // FFmpegのパーサーに生のバイト列を流し込み、NALユニット（フレーム境界）を正確に認識させる
-    int parsed_len = av_parser_parse2(
-        parser_, codec_ctx_,
-        &pkt_->data, &pkt_->size,
-        in_data.data(), in_data.size(),
-        AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0
-    );
+    av_packet_unref(internal_pkt_);
+    av_new_packet(internal_pkt_, size);
+    std::memcpy(internal_pkt_->data, in_data, size);
 
-    // 意味のある1フレームとしてパース（切り出し）が完了したら、送信用の配列にコピー
-    if (pkt_->size > 0) {
-        out_data.assign(pkt_->data, pkt_->data + pkt_->size);
-        return true;
+    // 超軽量キーフレーム検出器
+    bool is_keyframe = false;
+    for (size_t i = 0; i < size - 4; ++i) {
+        if (in_data[i] == 0 && in_data[i+1] == 0 && in_data[i+2] == 1) {
+            uint8_t nal_type = in_data[i+3] & 0x1F;
+            if (nal_type == 5 || nal_type == 7 || nal_type == 8) {
+                is_keyframe = true;
+                break;
+            }
+        }
+    }
+    if (is_keyframe) {
+        internal_pkt_->flags |= AV_PKT_FLAG_KEY;
     }
 
-    // まだ1フレーム分揃っていない場合（細切れで届いた場合）はスキップ
-    return false; 
+    has_data_ = true;
+    return true;
+}
+
+bool PassThroughEncoder::receive_packet(AVPacket* out_pkt) {
+    if (!has_data_) return false;
+    av_packet_move_ref(out_pkt, internal_pkt_); // データを転送して内部を空にする
+    has_data_ = false;
+    return true;
 }

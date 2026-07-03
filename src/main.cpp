@@ -44,7 +44,7 @@ int main() {
         //StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Camera_PassThrough);動きが反映されない
         //StreamThread stream(server_ip, server_port, 432, 240, 30, EncodeMode::Camera_PassThrough);細かい動きが無理
         
-        StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Software_Pi5);
+        StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Camera_PassThrough);
         
         
         // スレッドで配信スタート
