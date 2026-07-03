@@ -112,6 +112,9 @@
      // 指定したフォーマットや解像度を、接続されているカメラがサポートしているかテストする
      bool try_format(std::uint16_t width, std::uint16_t height, uint32_t pixfmt);
  
+     // ★追加：オートフォーカスを無効化する
+     void disable_autofocus();
+ 
      /**
       * @brief 起動直後の映像を数フレーム捨てる処理
       * @details カメラ起動直後はオート露出(明るさ調整)が効かず「白飛び」しやすいため、

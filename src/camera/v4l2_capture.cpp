@@ -72,6 +72,9 @@
  
      spdlog::info("initialized: {} ({}x{})", device_file_name_, width_, height_);
  
+     // ★追加：ここでオートフォーカスをオフにする（マニュアルフォーカス化）
+     disable_autofocus();
+ 
      try {
          // 映像を受け取るためのメモリ（バッファ）をOSに準備させる
          request_capture_buffer();
@@ -321,6 +324,25 @@
      spdlog::info("set format {}x{}", width_, height_);
  
      bytesperline_ = fmt.fmt.pix.bytesperline;
+ }
+ 
+ // =====================================================================
+ // ★追加：オートフォーカスの無効化（マニュアルフォーカス化）
+ // =====================================================================
+ void V4L2Capture::disable_autofocus()
+ {
+     struct v4l2_control ctrl{};
+ 
+     // オートフォーカス(AF)の無効化を指示
+     ctrl.id = V4L2_CID_FOCUS_AUTO;
+     ctrl.value = 0; // 0: オフ(マニュアル), 1: オン(オート)
+ 
+     if (xioctl(device_fd_, VIDIOC_S_CTRL, &ctrl) < 0) {
+         // オートフォーカス機能がない固定フォーカスカメラの場合は警告だけ出す
+         spdlog::warn("このカメラはオートフォーカスの制御に対応していないか、固定フォーカスです (errno={})", errno);
+     } else {
+         spdlog::info("オートフォーカスをオフ（マニュアルフォーカス）に設定しました");
+     }
  }
  
  // =====================================================================
