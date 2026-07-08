@@ -17,7 +17,7 @@ int main() {
     std::cout << "--- 映像伝送 Client 起動 (マルチスレッド完全版) ---" << std::endl;
 
     // 映像配信用（コックピット側）のIPアドレス
-    std::string server_ip = "192.168.77.234"; 
+    std::string server_ip = "219.112.66.122"; 
     int server_port = 1234;
 
     // 車両内制御マイコンのIPアドレス
