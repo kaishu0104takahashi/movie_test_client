@@ -1,0 +1,31 @@
+# プロジェクト基本設定
+PROJECT_NAME           = "Movie Test Client"
+OUTPUT_LANGUAGE        = Japanese
+DOXYFILE_ENCODING      = UTF-8
+
+# 読み込み元の設定
+INPUT                  = src include
+RECURSIVE              = YES
+FILE_PATTERNS          = *.cpp *.hpp *.c *.h
+
+# 出力対象の設定（隠蔽された関数や変数もすべて出す）
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = YES
+EXTRACT_STATIC         = YES
+
+# Graphviz (dot) による図解の生成設定
+HAVE_DOT               = YES
+CALL_GRAPH             = YES
+CALLER_GRAPH           = YES
+CLASS_GRAPH            = YES
+COLLABORATION_GRAPH    = YES
+UML_LOOK               = YES
+DIRECTORY_GRAPH        = YES
+
+# 出力フォーマットの設定（HTMLのみ生成し、Latexはオフにして高速化）
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+
+# ソースコードのブラウズ設定（関数から実際のコード行へ飛べるようにする）
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
