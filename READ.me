@@ -1,0 +1,11 @@
+sudo nano /etc/sysctl.conf//これを実行する
+
+/*
+# Video Streaming UDP Buffer (5MB)
+net.core.rmem_max=5242880
+net.core.wmem_max=5242880
+*/ //これを追記
+
+sudo sysctl -p //実行
+
+//これを忘れたら実行できません
