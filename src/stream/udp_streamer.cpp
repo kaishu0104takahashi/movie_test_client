@@ -5,7 +5,13 @@
 UdpStreamer::UdpStreamer(const std::string& dest_ip, int port) {
     avformat_network_init();
 
-    std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + "?pkt_size=1128&buffer_size=1024000";
+    // =========================================================================
+    // ★修正箇所：送信ペースの調整（マイクロバースト対策）
+    // bitrate=10000000 (10Mbps) を指定し、パケット間に微小な待機時間を設ける
+    // buffer_size も 5MB (5242880) に拡張
+    // =========================================================================
+    std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + 
+                      "?pkt_size=1128&buffer_size=5242880&bitrate=10000000";
 
     avformat_alloc_output_context2(&fmt_ctx_, nullptr, "mpegts", url.c_str());
     if (!fmt_ctx_) {
@@ -21,14 +27,10 @@ UdpStreamer::UdpStreamer(const std::string& dest_ip, int port) {
     av_dict_set(&options, "preset", "ultrafast", 0);
 
     if (avio_open(&fmt_ctx_->pb, url.c_str(), AVIO_FLAG_WRITE) < 0) {
-        av_dict_free(&options); // 失敗時もメモリを解放する
+        av_dict_free(&options);
         throw std::runtime_error("エラー: 送信ポートを開けません");
     }
     
-    // ==============================================================
-    // ★ 修正箇所：関数が失敗したかどうかのチェック（if）を追加しました。
-    // これにより、コンパイラからの warning が完全に消滅します。
-    // ==============================================================
     if (avformat_write_header(fmt_ctx_, &options) < 0) {
         av_dict_free(&options);
         throw std::runtime_error("エラー: 通信ヘッダの書き込みに失敗しました");
@@ -51,15 +53,12 @@ UdpStreamer::~UdpStreamer() {
 bool UdpStreamer::send_packet(AVPacket* pkt) {
     if (!pkt || pkt->size == 0) return false;
 
-    // タイムスタンプをMPEG-TS用に正しく打つ
     pkt->pts = frame_count_ * (90000 / 30); 
     pkt->dts = pkt->pts;
     pkt->stream_index = out_stream_->index;
 
-    // ネットワークへ発射
     int ret = av_interleaved_write_frame(fmt_ctx_, pkt);
 
-    // 撃ち終わったパケットの中身をクリアする（メモリリーク防止）
     av_packet_unref(pkt);
     frame_count_++;
 
