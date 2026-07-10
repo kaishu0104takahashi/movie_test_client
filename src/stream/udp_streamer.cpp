@@ -18,7 +18,7 @@
         // bitrate制限を外し、バッファを5MBにして大渋滞を回避する
         // =========================================================================
         std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + 
-                          "?pkt_size=1128&buffer_size=524288";
+                          "?pkt_size=1128&buffer_size=524288";//値を10/1にしている
     
         avformat_alloc_output_context2(&fmt_ctx_, nullptr, "mpegts", url.c_str());
         if (!fmt_ctx_) {
