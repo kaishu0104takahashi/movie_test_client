@@ -14,7 +14,9 @@ H264Encoder::H264Encoder(int width, int height, int fps, const std::string& enco
     codec_ctx_->time_base = {1, fps};
     codec_ctx_->framerate = {fps, 1};
     codec_ctx_->pix_fmt = AV_PIX_FMT_YUV420P;
-    codec_ctx_->bit_rate = 2000000;
+    
+    // ★ 修正箇所：目標ビットレートを4G回線に合わせて500kbpsに絞る
+    codec_ctx_->bit_rate = 500000;
 
     AVDictionary *opt = nullptr;
     av_dict_set(&opt, "preset", "ultrafast", 0);
@@ -57,7 +59,7 @@ bool H264Encoder::send_frame(const uint8_t* in_data, size_t size) {
 
     sws_scale(sws_ctx_, frame_yuyv_->data, frame_yuyv_->linesize, 0, height_,
               frame_yuv420p_->data, frame_yuv420p_->linesize);
-    
+
     frame_yuv420p_->pts = frame_count_++;
 
     // エンコーダに「入れる」だけ

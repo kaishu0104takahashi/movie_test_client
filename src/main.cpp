@@ -17,8 +17,8 @@ int main() {
     std::cout << "--- 映像伝送 Client 起動 (マルチスレッド完全版) ---" << std::endl;
 
     // IPアドレス
-    std::string server_ip = "100.67.192.60";
-    //std::string server_ip = "192.168.77.234"; 
+    //std::string server_ip = "100.67.192.60";
+    std::string server_ip = "192.168.77.234"; 
     int server_port = 1234;
     
     try {
@@ -35,7 +35,7 @@ int main() {
         //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
         // =================================================================================
         /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
-        StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Camera_PassThrough); //論外
+        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Camera_PassThrough); //論外
         //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Camera_PassThrough);//かなり重い
         //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Camera_PassThrough);かなり重い
         //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Camera_PassThrough);
@@ -51,7 +51,7 @@ int main() {
         //StreamThread stream(server_ip, server_port, 960, 720, 30, EncodeMode::Camera_PassThrough);640*480に近いが重い感覚がある
         //StreamThread stream(server_ip, server_port, 864, 480, 30, EncodeMode::Camera_PassThrough);同上
         //StreamThread stream(server_ip, server_port, 160, 120, 30, EncodeMode::Camera_PassThrough);これもあらすぎて論外
-        //StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Camera_PassThrough);動きが反映されない
+        StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Software_Pi5);//動きが反映されない
         //StreamThread stream(server_ip, server_port, 432, 240, 30, EncodeMode::Camera_PassThrough);細かい動きが無理
         
         //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Camera_PassThrough);
