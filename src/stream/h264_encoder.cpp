@@ -15,8 +15,10 @@ H264Encoder::H264Encoder(int width, int height, int fps, const std::string& enco
     codec_ctx_->framerate = {fps, 1};
     codec_ctx_->pix_fmt = AV_PIX_FMT_YUV420P;
     
-    // ★ 修正箇所：目標ビットレートを4G回線に合わせて500kbpsに絞る
+    // ★ 修正箇所1：目標ビットレートを4G回線に合わせて500kbpsに絞る
     codec_ctx_->bit_rate = 500000;
+    // ★ 修正箇所2：1秒間隔（fpsと同じフレーム数）で必ず設計図(キーフレーム)を送る
+    codec_ctx_->gop_size = fps;
 
     AVDictionary *opt = nullptr;
     av_dict_set(&opt, "preset", "ultrafast", 0);
@@ -62,13 +64,11 @@ bool H264Encoder::send_frame(const uint8_t* in_data, size_t size) {
 
     frame_yuv420p_->pts = frame_count_++;
 
-    // エンコーダに「入れる」だけ
     int ret = avcodec_send_frame(codec_ctx_, frame_yuv420p_);
     return (ret == 0);
 }
 
 bool H264Encoder::receive_packet(AVPacket* out_pkt) {
-    // エンコーダから「取り出す」だけ
     int ret = avcodec_receive_packet(codec_ctx_, out_pkt);
     return (ret == 0);
 }
