@@ -6,7 +6,6 @@
 
 #include "stream/stream_thread.hpp"
 
-// メインスレッド用（プログラム全体）の安全装置
 std::atomic<bool> keep_running(true);
 void signal_handler(int) {
     keep_running = false;
@@ -14,70 +13,44 @@ void signal_handler(int) {
 
 int main() {
     std::signal(SIGINT, signal_handler);
-    std::cout << "--- 映像伝送 Client 起動 (マルチスレッド完全版) ---" << std::endl;
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
 
-    // IPアドレス
-    //std::string server_ip = "100.67.192.60";
+    //std::string server_ip = "219.112.66.122";
     std::string server_ip = "192.168.77.234"; 
     int server_port = 1234;
     
     try {
-        // 解像度の履歴（コメントアウト）
-        //StreamThread stream(server_ip, server_port, 960, 720, 30, EncodeMode::Hardware_Pi4);
-        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Hardware_Pi4);
-        
-        // 第6引数のモード指定を EncodeMode::Hardware_Pi4 から EncodeMode::Software_Pi5 に
-        // 
-        // 【システム的な動作の連鎖】
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
         // 1. ここで Software_Pi5 を指定する。
         // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
         // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
         //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
         // =================================================================================
+        
         /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
-        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Camera_PassThrough); //論外
+        StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Camera_PassThrough); //論外
         //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Camera_PassThrough);//かなり重い
-        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Camera_PassThrough);かなり重い
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Camera_PassThrough);//かなり重い
         //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Camera_PassThrough);
-
-        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Software_Pi5); //論外
-        //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Software_Pi5);かなり重い
-        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Software_Pi5);かなり重い
-        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Software_Pi5);
-
-
-        //StreamThread stream(server_ip, server_port, 1600, 896, 30, EncodeMode::Camera_PassThrough);//論外
+        //StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Camera_PassThrough);
         
-        //StreamThread stream(server_ip, server_port, 960, 720, 30, EncodeMode::Camera_PassThrough);640*480に近いが重い感覚がある
-        //StreamThread stream(server_ip, server_port, 864, 480, 30, EncodeMode::Camera_PassThrough);同上
-        //StreamThread stream(server_ip, server_port, 160, 120, 30, EncodeMode::Camera_PassThrough);これもあらすぎて論外
-        StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Camera_PassThrough);//動きが反映されない
-        //StreamThread stream(server_ip, server_port, 432, 240, 30, EncodeMode::Camera_PassThrough);細かい動きが無理
-        
-        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Camera_PassThrough);
-        
-        
-        // スレッドで配信スタート
         stream.start();
-
         std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
 
-        // ③ メインスレッドの仕事は「終了の合図が来るまで待機する」
         while (keep_running) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
         std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
-        
         stream.stop();
-
     } catch (const std::exception& e) {
         std::cerr << "エラー: " << e.what() << std::endl;
         return -1;
     }
 
     return 0;
-}#include "stream/pass_through_encoder.hpp"
+}
+#include "stream/pass_through_encoder.hpp"
 #include <cstring>
 
 PassThroughEncoder::PassThroughEncoder() {
@@ -126,21 +99,10 @@ bool PassThroughEncoder::receive_packet(AVPacket* out_pkt) {
 UdpStreamer::UdpStreamer(const std::string& dest_ip, int port) {
     avformat_network_init();
 
-    // =========================================================================
-    // ★修正箇所：送信ペースの調整（マイクロバースト対策）
-    // bitrate=10000000 (10Mbps) を指定し、パケット間に微小な待機時間を設ける
-    // buffer_size も 5MB (5242880) に拡張
-    // =========================================================================
-    //std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + 
-    //                  "?pkt_size=1128&buffer_size=5242880&bitrate=10000000";
-
+    // ★ 修正箇所：出口のbitrate制限を完全に外し、大渋滞を回避する
     std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + 
-                      "?pkt_size=1128&buffer_size=524288&bitrate=1000000";
-    
+                      "?pkt_size=1128&buffer_size=5242880";
 
-    /*std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + 
-                  "?pkt_size=1128&buffer_size=5242880";
-    */
     avformat_alloc_output_context2(&fmt_ctx_, nullptr, "mpegts", url.c_str());
     if (!fmt_ctx_) {
         throw std::runtime_error("エラー: MPEG-TS 出力設定に失敗");
@@ -191,7 +153,8 @@ bool UdpStreamer::send_packet(AVPacket* pkt) {
     frame_count_++;
 
     return (ret >= 0);
-}#include "stream/stream_thread.hpp"
+}
+#include "stream/stream_thread.hpp"
 #include "stream/pass_through_encoder.hpp"
 #include <iostream>
 #include <chrono>
@@ -273,44 +236,65 @@ void StreamThread::thread_loop() {
 H264Encoder::H264Encoder(int width, int height, int fps, const std::string& encoder_name)
     : width_(width), height_(height) {
     
+    // 指定された名前（例: libx264）に対応するエンコーダを検索して取得する
     const AVCodec* codec = avcodec_find_encoder_by_name(encoder_name.c_str());
     if (!codec) throw std::runtime_error("エラー: エンコーダが見つかりません");
 
+    // エンコーダの設定情報（コンテキスト）を格納するためのメモリを割り当てる
     codec_ctx_ = avcodec_alloc_context3(codec);
     codec_ctx_->width = width;
     codec_ctx_->height = height;
+    
+    // タイムベース（時間の基本単位）とフレームレートを設定する
     codec_ctx_->time_base = {1, fps};
     codec_ctx_->framerate = {fps, 1};
+    
+    // H.264エンコードにおいて標準的に用いられるピクセルフォーマット（YUV420P）を指定する
     codec_ctx_->pix_fmt = AV_PIX_FMT_YUV420P;
-    codec_ctx_->bit_rate = 2000000;
+    
+    // 目標とする映像ビットレートを5Mbps（5,000,000 bps）に設定し、データ量と画質を制御する
+    codec_ctx_->bit_rate = 5000000;
+    
+    // GOP (Group of Pictures) サイズの設定。フレームレートと同値にすることで、
+    // 1秒に1回必ずキーフレーム（Iフレーム）を挿入し、パケットロス発生時の映像復帰を早める機能を持たせる
+    codec_ctx_->gop_size = fps;
 
+    // リアルタイムストリーミング用のエンコーダオプションを設定する
+    // ultrafast: 圧縮効率よりも処理速度を最優先する
+    // zerolatency: エンコーダ内部でのバッファリングを無効化し、遅延を最小限に抑える
     AVDictionary *opt = nullptr;
     av_dict_set(&opt, "preset", "ultrafast", 0);
     av_dict_set(&opt, "tune", "zerolatency", 0);
 
+    // 設定したオプションとコンテキストを用いて、実際にエンコーダを初期化して起動する
     if (avcodec_open2(codec_ctx_, codec, &opt) < 0) {
         throw std::runtime_error("エラー: エンコーダの起動に失敗しました");
     }
     av_dict_free(&opt);
 
+    // カメラから取得する非圧縮の生データ（YUYV422形式）を格納するためのフレーム構造体を確保する
     frame_yuyv_ = av_frame_alloc();
     frame_yuyv_->format = AV_PIX_FMT_YUYV422;
     frame_yuyv_->width = width;
     frame_yuyv_->height = height;
     av_frame_get_buffer(frame_yuyv_, 0);
 
+    // エンコーダに渡すための変換後データ（YUV420P形式）を格納するフレーム構造体を確保する
     frame_yuv420p_ = av_frame_alloc();
     frame_yuv420p_->format = AV_PIX_FMT_YUV420P;
     frame_yuv420p_->width = width;
     frame_yuv420p_->height = height;
     av_frame_get_buffer(frame_yuv420p_, 0);
 
+    // 生データ（YUYV422）からエンコード用データ（YUV420P）へのピクセルフォーマット変換、
+    // および必要に応じたスケーリング処理を行うための変換コンテキストを生成する
     sws_ctx_ = sws_getContext(width, height, AV_PIX_FMT_YUYV422,
                               width, height, AV_PIX_FMT_YUV420P,
                               SWS_BILINEAR, nullptr, nullptr, nullptr);
 }
 
 H264Encoder::~H264Encoder() {
+    // 確保した各種コンテキストとフレームのメモリを安全に解放し、メモリリークを防ぐ
     if (sws_ctx_) sws_freeContext(sws_ctx_);
     if (frame_yuv420p_) av_frame_free(&frame_yuv420p_);
     if (frame_yuyv_) av_frame_free(&frame_yuyv_);
@@ -318,23 +302,27 @@ H264Encoder::~H264Encoder() {
 }
 
 bool H264Encoder::send_frame(const uint8_t* in_data, size_t size) {
+    // 入力データのサイズが、指定解像度におけるYUYV422の想定サイズと一致するか検証する
     int expected_size = width_ * height_ * 2;
     if (size < expected_size || !in_data) return false;
 
+    // 入力された生データを、変換前用のフレーム（frame_yuyv_）のデータ領域にコピーする
     std::memcpy(frame_yuyv_->data[0], in_data, expected_size);
 
+    // libswscaleを用いて、YUYV422からYUV420Pへのフォーマット変換を実行し、frame_yuv420p_に出力する
     sws_scale(sws_ctx_, frame_yuyv_->data, frame_yuyv_->linesize, 0, height_,
               frame_yuv420p_->data, frame_yuv420p_->linesize);
-    
+
+    // フレームに表示タイミングを示すタイムスタンプ（PTS）を付与し、カウントを進める
     frame_yuv420p_->pts = frame_count_++;
 
-    // エンコーダに「入れる」だけ
+    // フォーマット変換されたフレームをエンコーダに送信し、圧縮処理を要求する
     int ret = avcodec_send_frame(codec_ctx_, frame_yuv420p_);
     return (ret == 0);
 }
 
 bool H264Encoder::receive_packet(AVPacket* out_pkt) {
-    // エンコーダから「取り出す」だけ
+    // エンコーダから、圧縮処理が完了したパケット（H.264データ）を取り出す
     int ret = avcodec_receive_packet(codec_ctx_, out_pkt);
     return (ret == 0);
 }/**
@@ -1176,7 +1164,176 @@ public:
      void store_clean_mjpeg(Frame& frame, const uint8_t *buf_ptr, size_t buf_size);
  };
  
- #endif#include "stream/udp_streamer.hpp"
+ #endif#include "stream/h264_encoder.hpp"
+#include <stdexcept>
+#include <cstring>
+
+H264Encoder::H264Encoder(int width, int height, int fps, const std::string& encoder_name)
+    : width_(width), height_(height) {
+    
+    // 指定された名前（例: libx264）に対応するエンコーダを検索して取得する
+    const AVCodec* codec = avcodec_find_encoder_by_name(encoder_name.c_str());
+    if (!codec) throw std::runtime_error("エラー: エンコーダが見つかりません");
+
+    // エンコーダの設定情報（コンテキスト）を格納するためのメモリを割り当てる
+    codec_ctx_ = avcodec_alloc_context3(codec);
+    codec_ctx_->width = width;
+    codec_ctx_->height = height;
+    
+    // タイムベース（時間の基本単位）とフレームレートを設定する
+    codec_ctx_->time_base = {1, fps};
+    codec_ctx_->framerate = {fps, 1};
+    
+    // H.264エンコードにおいて標準的に用いられるピクセルフォーマット（YUV420P）を指定する
+    codec_ctx_->pix_fmt = AV_PIX_FMT_YUV420P;
+    
+    // 目標とする映像ビットレートを5Mbps（5,000,000 bps）に設定し、データ量と画質を制御する
+    codec_ctx_->bit_rate = 5000000;
+    
+    // GOP (Group of Pictures) サイズの設定。フレームレートと同値にすることで、
+    // 1秒に1回必ずキーフレーム（Iフレーム）を挿入し、パケットロス発生時の映像復帰を早める機能を持たせる
+    codec_ctx_->gop_size = fps;
+
+    // リアルタイムストリーミング用のエンコーダオプションを設定する
+    // ultrafast: 圧縮効率よりも処理速度を最優先する
+    // zerolatency: エンコーダ内部でのバッファリングを無効化し、遅延を最小限に抑える
+    AVDictionary *opt = nullptr;
+    av_dict_set(&opt, "preset", "ultrafast", 0);
+    av_dict_set(&opt, "tune", "zerolatency", 0);
+
+    // 設定したオプションとコンテキストを用いて、実際にエンコーダを初期化して起動する
+    if (avcodec_open2(codec_ctx_, codec, &opt) < 0) {
+        throw std::runtime_error("エラー: エンコーダの起動に失敗しました");
+    }
+    av_dict_free(&opt);
+
+    // カメラから取得する非圧縮の生データ（YUYV422形式）を格納するためのフレーム構造体を確保する
+    frame_yuyv_ = av_frame_alloc();
+    frame_yuyv_->format = AV_PIX_FMT_YUYV422;
+    frame_yuyv_->width = width;
+    frame_yuyv_->height = height;
+    av_frame_get_buffer(frame_yuyv_, 0);
+
+    // エンコーダに渡すための変換後データ（YUV420P形式）を格納するフレーム構造体を確保する
+    frame_yuv420p_ = av_frame_alloc();
+    frame_yuv420p_->format = AV_PIX_FMT_YUV420P;
+    frame_yuv420p_->width = width;
+    frame_yuv420p_->height = height;
+    av_frame_get_buffer(frame_yuv420p_, 0);
+
+    // 生データ（YUYV422）からエンコード用データ（YUV420P）へのピクセルフォーマット変換、
+    // および必要に応じたスケーリング処理を行うための変換コンテキストを生成する
+    sws_ctx_ = sws_getContext(width, height, AV_PIX_FMT_YUYV422,
+                              width, height, AV_PIX_FMT_YUV420P,
+                              SWS_BILINEAR, nullptr, nullptr, nullptr);
+}
+
+H264Encoder::~H264Encoder() {
+    // 確保した各種コンテキストとフレームのメモリを安全に解放し、メモリリークを防ぐ
+    if (sws_ctx_) sws_freeContext(sws_ctx_);
+    if (frame_yuv420p_) av_frame_free(&frame_yuv420p_);
+    if (frame_yuyv_) av_frame_free(&frame_yuyv_);
+    if (codec_ctx_) avcodec_free_context(&codec_ctx_);
+}
+
+bool H264Encoder::send_frame(const uint8_t* in_data, size_t size) {
+    // 入力データのサイズが、指定解像度におけるYUYV422の想定サイズと一致するか検証する
+    int expected_size = width_ * height_ * 2;
+    if (size < expected_size || !in_data) return false;
+
+    // 入力された生データを、変換前用のフレーム（frame_yuyv_）のデータ領域にコピーする
+    std::memcpy(frame_yuyv_->data[0], in_data, expected_size);
+
+    // libswscaleを用いて、YUYV422からYUV420Pへのフォーマット変換を実行し、frame_yuv420p_に出力する
+    sws_scale(sws_ctx_, frame_yuyv_->data, frame_yuyv_->linesize, 0, height_,
+              frame_yuv420p_->data, frame_yuv420p_->linesize);
+
+    // フレームに表示タイミングを示すタイムスタンプ（PTS）を付与し、カウントを進める
+    frame_yuv420p_->pts = frame_count_++;
+
+    // フォーマット変換されたフレームをエンコーダに送信し、圧縮処理を要求する
+    int ret = avcodec_send_frame(codec_ctx_, frame_yuv420p_);
+    return (ret == 0);
+}
+
+bool H264Encoder::receive_packet(AVPacket* out_pkt) {
+    // エンコーダから、圧縮処理が完了したパケット（H.264データ）を取り出す
+    int ret = avcodec_receive_packet(codec_ctx_, out_pkt);
+    return (ret == 0);
+}#include "stream/h264_encoder.hpp"
+#include <stdexcept>
+#include <cstring>
+
+H264Encoder::H264Encoder(int width, int height, int fps, const std::string& encoder_name)
+    : width_(width), height_(height) {
+    
+    const AVCodec* codec = avcodec_find_encoder_by_name(encoder_name.c_str());
+    if (!codec) throw std::runtime_error("エラー: エンコーダが見つかりません");
+
+    codec_ctx_ = avcodec_alloc_context3(codec);
+    codec_ctx_->width = width;
+    codec_ctx_->height = height;
+    codec_ctx_->time_base = {1, fps};
+    codec_ctx_->framerate = {fps, 1};
+    codec_ctx_->pix_fmt = AV_PIX_FMT_YUV420P;
+    
+    // ★ 修正箇所：目標ビットレートを4G回線に合わせて500kbpsに絞る
+    codec_ctx_->bit_rate = 500000;
+
+    AVDictionary *opt = nullptr;
+    av_dict_set(&opt, "preset", "ultrafast", 0);
+    av_dict_set(&opt, "tune", "zerolatency", 0);
+
+    if (avcodec_open2(codec_ctx_, codec, &opt) < 0) {
+        throw std::runtime_error("エラー: エンコーダの起動に失敗しました");
+    }
+    av_dict_free(&opt);
+
+    frame_yuyv_ = av_frame_alloc();
+    frame_yuyv_->format = AV_PIX_FMT_YUYV422;
+    frame_yuyv_->width = width;
+    frame_yuyv_->height = height;
+    av_frame_get_buffer(frame_yuyv_, 0);
+
+    frame_yuv420p_ = av_frame_alloc();
+    frame_yuv420p_->format = AV_PIX_FMT_YUV420P;
+    frame_yuv420p_->width = width;
+    frame_yuv420p_->height = height;
+    av_frame_get_buffer(frame_yuv420p_, 0);
+
+    sws_ctx_ = sws_getContext(width, height, AV_PIX_FMT_YUYV422,
+                              width, height, AV_PIX_FMT_YUV420P,
+                              SWS_BILINEAR, nullptr, nullptr, nullptr);
+}
+
+H264Encoder::~H264Encoder() {
+    if (sws_ctx_) sws_freeContext(sws_ctx_);
+    if (frame_yuv420p_) av_frame_free(&frame_yuv420p_);
+    if (frame_yuyv_) av_frame_free(&frame_yuyv_);
+    if (codec_ctx_) avcodec_free_context(&codec_ctx_);
+}
+
+bool H264Encoder::send_frame(const uint8_t* in_data, size_t size) {
+    int expected_size = width_ * height_ * 2;
+    if (size < expected_size || !in_data) return false;
+
+    std::memcpy(frame_yuyv_->data[0], in_data, expected_size);
+
+    sws_scale(sws_ctx_, frame_yuyv_->data, frame_yuyv_->linesize, 0, height_,
+              frame_yuv420p_->data, frame_yuv420p_->linesize);
+
+    frame_yuv420p_->pts = frame_count_++;
+
+    // エンコーダに「入れる」だけ
+    int ret = avcodec_send_frame(codec_ctx_, frame_yuv420p_);
+    return (ret == 0);
+}
+
+bool H264Encoder::receive_packet(AVPacket* out_pkt) {
+    // エンコーダから「取り出す」だけ
+    int ret = avcodec_receive_packet(codec_ctx_, out_pkt);
+    return (ret == 0);
+}#include "stream/udp_streamer.hpp"
 #include <stdexcept>
 #include <iostream>
 
@@ -1309,7 +1466,215 @@ bool UdpStreamer::send_packet(AVPacket* pkt) {
     frame_count_++;
 
     return (ret >= 0);
-}#include "stream/udp_streamer.hpp"
+}
+    // =========================================================================
+    // ★修正箇所：送信ペースの調整（マイクロバースト対策）
+    // bitrate=10000000 (10Mbps) を指定し、パケット間に微小な待機時間を設ける
+    // buffer_size も 5MB (5242880) に拡張
+    // =========================================================================
+    //std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + 
+    //                  "?pkt_size=1128&buffer_size=5242880&bitrate=10000000";
+    #include "stream/udp_streamer.hpp"
+    #include <stdexcept>
+    #include <iostream>
+    
+    UdpStreamer::UdpStreamer(const std::string& dest_ip, int port) {
+        avformat_network_init();
+    
+        // =========================================================================
+        // ★修正箇所：送信ペースの調整（マイクロバースト対策）
+        // bitrate制限を外し、バッファを5MBにして大渋滞を回避する
+        // =========================================================================
+        std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + 
+                          "?pkt_size=1128&buffer_size=524288";//値を10/1にしている
+    
+        avformat_alloc_output_context2(&fmt_ctx_, nullptr, "mpegts", url.c_str());
+        if (!fmt_ctx_) {
+            throw std::runtime_error("エラー: MPEG-TS 出力設定に失敗");
+        }
+    
+        out_stream_ = avformat_new_stream(fmt_ctx_, nullptr);
+        out_stream_->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+        out_stream_->codecpar->codec_id = AV_CODEC_ID_H264;
+    
+        AVDictionary* options = nullptr;
+        av_dict_set(&options, "tune", "zerolatency", 0);
+        av_dict_set(&options, "preset", "ultrafast", 0);
+    
+        if (avio_open(&fmt_ctx_->pb, url.c_str(), AVIO_FLAG_WRITE) < 0) {
+            av_dict_free(&options);
+            throw std::runtime_error("エラー: 送信ポートを開けません");
+        }
+        
+        if (avformat_write_header(fmt_ctx_, &options) < 0) {
+            av_dict_free(&options);
+            throw std::runtime_error("エラー: 通信ヘッダの書き込みに失敗しました");
+        }
+        
+        av_dict_free(&options);
+    }
+    
+    UdpStreamer::~UdpStreamer() {
+        if (fmt_ctx_) {
+            av_write_trailer(fmt_ctx_);
+            if (!(fmt_ctx_->oformat->flags & AVFMT_NOFILE)) {
+                avio_closep(&fmt_ctx_->pb);
+            }
+            avformat_free_context(fmt_ctx_);
+        }
+        avformat_network_deinit();
+    }
+    
+    bool UdpStreamer::send_packet(AVPacket* pkt) {
+        if (!pkt || pkt->size == 0) return false;
+    
+        pkt->pts = frame_count_ * (90000 / 30); 
+        pkt->dts = pkt->pts;
+        pkt->stream_index = out_stream_->index;
+    
+        int ret = av_interleaved_write_frame(fmt_ctx_, pkt);
+    
+        av_packet_unref(pkt);
+        frame_count_++;
+    
+        return (ret >= 0);
+    }#include "stream/udp_streamer.hpp"
+#include <stdexcept>
+#include <iostream>
+
+UdpStreamer::UdpStreamer(const std::string& dest_ip, int port) {
+    avformat_network_init();
+
+    // =========================================================================
+    // ★修正箇所：送信ペースの調整（マイクロバースト対策）
+    // bitrate制限を外し、バッファを5MBにして大渋滞を回避する
+    // =========================================================================
+    std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + 
+                      "?pkt_size=1128&buffer_size=5242880";
+
+    avformat_alloc_output_context2(&fmt_ctx_, nullptr, "mpegts", url.c_str());
+    if (!fmt_ctx_) {
+        throw std::runtime_error("エラー: MPEG-TS 出力設定に失敗");
+    }
+
+    out_stream_ = avformat_new_stream(fmt_ctx_, nullptr);
+    out_stream_->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    out_stream_->codecpar->codec_id = AV_CODEC_ID_H264;
+
+    AVDictionary* options = nullptr;
+    av_dict_set(&options, "tune", "zerolatency", 0);
+    av_dict_set(&options, "preset", "ultrafast", 0);
+
+    if (avio_open(&fmt_ctx_->pb, url.c_str(), AVIO_FLAG_WRITE) < 0) {
+        av_dict_free(&options);
+        throw std::runtime_error("エラー: 送信ポートを開けません");
+    }
+    
+    if (avformat_write_header(fmt_ctx_, &options) < 0) {
+        av_dict_free(&options);
+        throw std::runtime_error("エラー: 通信ヘッダの書き込みに失敗しました");
+    }
+    
+    av_dict_free(&options);
+}
+
+UdpStreamer::~UdpStreamer() {
+    if (fmt_ctx_) {
+        av_write_trailer(fmt_ctx_);
+        if (!(fmt_ctx_->oformat->flags & AVFMT_NOFILE)) {
+            avio_closep(&fmt_ctx_->pb);
+        }
+        avformat_free_context(fmt_ctx_);
+    }
+    avformat_network_deinit();
+}
+
+bool UdpStreamer::send_packet(AVPacket* pkt) {
+    if (!pkt || pkt->size == 0) return false;
+
+    pkt->pts = frame_count_ * (90000 / 30); 
+    pkt->dts = pkt->pts;
+    pkt->stream_index = out_stream_->index;
+
+    int ret = av_interleaved_write_frame(fmt_ctx_, pkt);
+
+    av_packet_unref(pkt);
+    frame_count_++;
+
+    return (ret >= 0);
+}
+    // =========================================================================
+    // ★修正箇所：送信ペースの調整（マイクロバースト対策）
+    // bitrate=10000000 (10Mbps) を指定し、パケット間に微小な待機時間を設ける
+    // buffer_size も 5MB (5242880) に拡張
+    // =========================================================================
+    //std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + 
+    //                  "?pkt_size=1128&buffer_size=5242880&bitrate=10000000";
+    #include "stream/udp_streamer.hpp"
+    #include <stdexcept>
+    #include <iostream>
+    
+    UdpStreamer::UdpStreamer(const std::string& dest_ip, int port) {
+        avformat_network_init();
+    
+        // =========================================================================
+        // ★修正箇所：送信ペースの調整（マイクロバースト対策）
+        // bitrate制限を外し、バッファを5MBにして大渋滞を回避する
+        // =========================================================================
+        std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + 
+                          "?pkt_size=1128&buffer_size=524288";
+    
+        avformat_alloc_output_context2(&fmt_ctx_, nullptr, "mpegts", url.c_str());
+        if (!fmt_ctx_) {
+            throw std::runtime_error("エラー: MPEG-TS 出力設定に失敗");
+        }
+    
+        out_stream_ = avformat_new_stream(fmt_ctx_, nullptr);
+        out_stream_->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+        out_stream_->codecpar->codec_id = AV_CODEC_ID_H264;
+    
+        AVDictionary* options = nullptr;
+        av_dict_set(&options, "tune", "zerolatency", 0);
+        av_dict_set(&options, "preset", "ultrafast", 0);
+    
+        if (avio_open(&fmt_ctx_->pb, url.c_str(), AVIO_FLAG_WRITE) < 0) {
+            av_dict_free(&options);
+            throw std::runtime_error("エラー: 送信ポートを開けません");
+        }
+        
+        if (avformat_write_header(fmt_ctx_, &options) < 0) {
+            av_dict_free(&options);
+            throw std::runtime_error("エラー: 通信ヘッダの書き込みに失敗しました");
+        }
+        
+        av_dict_free(&options);
+    }
+    
+    UdpStreamer::~UdpStreamer() {
+        if (fmt_ctx_) {
+            av_write_trailer(fmt_ctx_);
+            if (!(fmt_ctx_->oformat->flags & AVFMT_NOFILE)) {
+                avio_closep(&fmt_ctx_->pb);
+            }
+            avformat_free_context(fmt_ctx_);
+        }
+        avformat_network_deinit();
+    }
+    
+    bool UdpStreamer::send_packet(AVPacket* pkt) {
+        if (!pkt || pkt->size == 0) return false;
+    
+        pkt->pts = frame_count_ * (90000 / 30); 
+        pkt->dts = pkt->pts;
+        pkt->stream_index = out_stream_->index;
+    
+        int ret = av_interleaved_write_frame(fmt_ctx_, pkt);
+    
+        av_packet_unref(pkt);
+        frame_count_++;
+    
+        return (ret >= 0);
+    }#include "stream/udp_streamer.hpp"
 #include <stdexcept>
 #include <iostream>
 
@@ -1453,6 +1818,360 @@ bool UdpStreamer::send_packet(AVPacket* pkt) {
     frame_count_++;
 
     return (ret >= 0);
+}
+    // =========================================================================
+    // ★修正箇所：送信ペースの調整（マイクロバースト対策）
+    // bitrate=10000000 (10Mbps) を指定し、パケット間に微小な待機時間を設ける
+    // buffer_size も 5MB (5242880) に拡張
+    // =========================================================================
+    //std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + 
+    //                  "?pkt_size=1128&buffer_size=5242880&bitrate=10000000";
+    #include "stream/udp_streamer.hpp"
+    #include <stdexcept>
+    #include <iostream>
+    
+    UdpStreamer::UdpStreamer(const std::string& dest_ip, int port) {
+        avformat_network_init();
+    
+        // =========================================================================
+        // ★修正箇所：送信ペースの調整（マイクロバースト対策）
+        // bitrate制限を外し、バッファを5MBにして大渋滞を回避する
+        // =========================================================================
+        std::string url = "udp://" + dest_ip + ":" + std::to_string(port) + 
+                          "?pkt_size=1128&buffer_size=5242880";
+    
+        avformat_alloc_output_context2(&fmt_ctx_, nullptr, "mpegts", url.c_str());
+        if (!fmt_ctx_) {
+            throw std::runtime_error("エラー: MPEG-TS 出力設定に失敗");
+        }
+    
+        out_stream_ = avformat_new_stream(fmt_ctx_, nullptr);
+        out_stream_->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+        out_stream_->codecpar->codec_id = AV_CODEC_ID_H264;
+    
+        AVDictionary* options = nullptr;
+        av_dict_set(&options, "tune", "zerolatency", 0);
+        av_dict_set(&options, "preset", "ultrafast", 0);
+    
+        if (avio_open(&fmt_ctx_->pb, url.c_str(), AVIO_FLAG_WRITE) < 0) {
+            av_dict_free(&options);
+            throw std::runtime_error("エラー: 送信ポートを開けません");
+        }
+        
+        if (avformat_write_header(fmt_ctx_, &options) < 0) {
+            av_dict_free(&options);
+            throw std::runtime_error("エラー: 通信ヘッダの書き込みに失敗しました");
+        }
+        
+        av_dict_free(&options);
+    }
+    
+    UdpStreamer::~UdpStreamer() {
+        if (fmt_ctx_) {
+            av_write_trailer(fmt_ctx_);
+            if (!(fmt_ctx_->oformat->flags & AVFMT_NOFILE)) {
+                avio_closep(&fmt_ctx_->pb);
+            }
+            avformat_free_context(fmt_ctx_);
+        }
+        avformat_network_deinit();
+    }
+    
+    bool UdpStreamer::send_packet(AVPacket* pkt) {
+        if (!pkt || pkt->size == 0) return false;
+    
+        pkt->pts = frame_count_ * (90000 / 30); 
+        pkt->dts = pkt->pts;
+        pkt->stream_index = out_stream_->index;
+    
+        int ret = av_interleaved_write_frame(fmt_ctx_, pkt);
+    
+        av_packet_unref(pkt);
+        frame_count_++;
+    
+        return (ret >= 0);
+    }#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
+
+    //std::string server_ip = "219.112.66.122";
+    std::string server_ip = "192.168.77.234"; 
+    int server_port = 1234;
+    
+    try {
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Camera_PassThrough); //論外
+        //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Camera_PassThrough);//かなり重い
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Camera_PassThrough);//かなり重い
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Camera_PassThrough);
+        StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Camera_PassThrough);
+        
+        stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        stream.stop();
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
+
+    //std::string server_ip = "219.112.66.122";
+    std::string server_ip = "192.168.77.234"; 
+    int server_port = 1234;
+    
+    try {
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+        StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Camera_PassThrough); //論外
+        //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Camera_PassThrough);//かなり重い
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Camera_PassThrough);//かなり重い
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Camera_PassThrough);
+        //StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Camera_PassThrough);
+        
+        stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        stream.stop();
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
+
+    std::string server_ip = "219.112.66.122";
+    //std::string server_ip = "192.168.77.199"; 
+    int server_port = 1234;
+    
+    try {
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+        
+        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Software_Pi5); //論外
+        //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Software_Pi5);かなり重い
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Software_Pi5);かなり重い
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Software_Pi5);
+        StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Software_Pi5);
+        
+        stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        stream.stop();
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
+
+    std::string server_ip = "219.112.66.122";
+    //std::string server_ip = "192.168.77.199"; 
+    int server_port = 1234;
+    
+    try {
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+        StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Software_Pi5);
+        
+        stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        stream.stop();
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
+// メインスレッド用（プログラム全体）の安全装置
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (マルチスレッド完全版) ---" << std::endl;
+
+    // IPアドレス
+    //std::string server_ip = "100.67.192.60";
+    std::string server_ip = "192.168.77.234"; 
+    int server_port = 1234;
+    
+    try {
+        // 解像度の履歴（コメントアウト）
+        //StreamThread stream(server_ip, server_port, 960, 720, 30, EncodeMode::Hardware_Pi4);
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Hardware_Pi4);
+        
+        // 第6引数のモード指定を EncodeMode::Hardware_Pi4 から EncodeMode::Software_Pi5 に
+        // 
+        // 【システム的な動作の連鎖】
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Camera_PassThrough); //論外
+        //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Camera_PassThrough);//かなり重い
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Camera_PassThrough);かなり重い
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Camera_PassThrough);
+
+        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Software_Pi5); //論外
+        //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Software_Pi5);かなり重い
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Software_Pi5);かなり重い
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Software_Pi5);
+
+
+        //StreamThread stream(server_ip, server_port, 1600, 896, 30, EncodeMode::Camera_PassThrough);//論外
+        
+        //StreamThread stream(server_ip, server_port, 960, 720, 30, EncodeMode::Camera_PassThrough);640*480に近いが重い感覚がある
+        //StreamThread stream(server_ip, server_port, 864, 480, 30, EncodeMode::Camera_PassThrough);同上
+        //StreamThread stream(server_ip, server_port, 160, 120, 30, EncodeMode::Camera_PassThrough);これもあらすぎて論外
+        StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Software_Pi5);//動きが反映されない
+        //StreamThread stream(server_ip, server_port, 432, 240, 30, EncodeMode::Camera_PassThrough);細かい動きが無理
+        
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Camera_PassThrough);
+        
+        
+        // スレッドで配信スタート
+        stream.start();
+
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        // ③ メインスレッドの仕事は「終了の合図が来るまで待機する」
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        
+        stream.stop();
+
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
 }#include <iostream>
 #include <csignal>
 #include <atomic>
@@ -1838,6 +2557,58 @@ int main() {
 
 #include "stream/stream_thread.hpp"
 
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
+
+    //std::string server_ip = "219.112.66.122";
+    std::string server_ip = "192.168.77.234"; 
+    int server_port = 1234;
+    
+    try {
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Camera_PassThrough); //論外
+        //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Camera_PassThrough);//かなり重い
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Camera_PassThrough);//かなり重い
+        StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Camera_PassThrough);
+        //StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Camera_PassThrough);
+        
+        stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        stream.stop();
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
 // メインスレッド用（プログラム全体）の安全装置
 std::atomic<bool> keep_running(true);
 void signal_handler(int) {
@@ -1978,6 +2749,162 @@ int main() {
 
 #include "stream/stream_thread.hpp"
 
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
+
+    //std::string server_ip = "219.112.66.122";
+    std::string server_ip = "192.168.77.234"; 
+    int server_port = 1234;
+    
+    try {
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+
+        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Software_Pi5); //論外
+        //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Software_Pi5);//かなり重い
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Software_Pi5);//かなり重い
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Software_Pi5);
+        StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Software_Pi5);
+        
+        stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        stream.stop();
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
+
+    std::string server_ip = "219.112.66.122";
+    //std::string server_ip = "192.168.77.199"; 
+    int server_port = 1234;
+    
+    try {
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+
+        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Software_Pi5); //論外
+        //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Software_Pi5);//かなり重い
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Software_Pi5);//かなり重い
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Software_Pi5);
+        StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Software_Pi5);
+        
+        stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        stream.stop();
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
+
+    //std::string server_ip = "219.112.66.122";
+    std::string server_ip = "192.168.77.234"; 
+    int server_port = 1234;
+    
+    try {
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Camera_PassThrough); //論外
+        //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Camera_PassThrough);//かなり重い
+        StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Camera_PassThrough);//かなり重い
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Camera_PassThrough);
+        //StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Camera_PassThrough);
+        
+        stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        stream.stop();
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
 // メインスレッド用（プログラム全体）の安全装置
 std::atomic<bool> keep_running(true);
 void signal_handler(int) {
@@ -2427,6 +3354,214 @@ int main() {
 
     return 0;
 }#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
+
+    //std::string server_ip = "219.112.66.122";
+    std::string server_ip = "192.168.77.234"; 
+    int server_port = 1234;
+    
+    try {
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+
+        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Software_Pi5); //論外
+        //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Software_Pi5);//かなり重い
+        StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Software_Pi5);//かなり重い
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Software_Pi5);
+        //StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Software_Pi5);
+        
+        stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        stream.stop();
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
+
+    //std::string server_ip = "219.112.66.122";
+    std::string server_ip = "192.168.77.234"; 
+    int server_port = 1234;
+    
+    try {
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+
+        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Software_Pi5); //論外
+        //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Software_Pi5);//かなり重い
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Software_Pi5);//かなり重い
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Software_Pi5);
+        StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Software_Pi5);
+        
+        stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        stream.stop();
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
+
+    //std::string server_ip = "219.112.66.122";
+    std::string server_ip = "192.168.77.234"; 
+    int server_port = 1234;
+    
+    try {
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+
+        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Software_Pi5); //論外
+        StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Software_Pi5);//かなり重い
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Software_Pi5);//かなり重い
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Software_Pi5);
+        //StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Software_Pi5);
+        
+        stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        stream.stop();
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
+
+    //std::string server_ip = "219.112.66.122";
+    std::string server_ip = "192.168.77.234"; 
+    int server_port = 1234;
+    
+    try {
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+
+        StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Software_Pi5); //論外
+        //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Software_Pi5);//かなり重い
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Software_Pi5);//かなり重い
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Software_Pi5);
+        //StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Software_Pi5);
+        
+        stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        stream.stop();
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+#include <iostream>
 #include <csignal>
 #include <atomic>
 #include <thread>
@@ -2586,6 +3721,110 @@ int main() {
 
 #include "stream/stream_thread.hpp"
 
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
+
+    //std::string server_ip = "219.112.66.122";
+    std::string server_ip = "192.168.77.234"; 
+    int server_port = 1234;
+    
+    try {
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Camera_PassThrough); //論外
+        StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Camera_PassThrough);//かなり重い
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Camera_PassThrough);//かなり重い
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Camera_PassThrough);
+        //StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Camera_PassThrough);
+        
+        stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        stream.stop();
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
+
+    //std::string server_ip = "219.112.66.122";
+    std::string server_ip = "192.168.77.234"; 
+    int server_port = 1234;
+    
+    try {
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+
+        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Software_Pi5); //論外
+        //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Software_Pi5);//かなり重い
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Software_Pi5);//かなり重い
+        StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Software_Pi5);
+        //StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Software_Pi5);
+        
+        stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        stream.stop();
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
 // メインスレッド用（プログラム全体）の安全装置
 std::atomic<bool> keep_running(true);
 void signal_handler(int) {
@@ -2720,6 +3959,56 @@ int main() {
         
         stream.stop();
 
+    } catch (const std::exception& e) {
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
+}#include <iostream>
+#include <csignal>
+#include <atomic>
+#include <thread>
+#include <chrono>
+
+#include "stream/stream_thread.hpp"
+
+std::atomic<bool> keep_running(true);
+void signal_handler(int) {
+    keep_running = false;
+}
+
+int main() {
+    std::signal(SIGINT, signal_handler);
+    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化版) ---" << std::endl;
+
+    std::string server_ip = "219.112.66.122";
+    //std::string server_ip = "192.168.77.199"; 
+    int server_port = 1234;
+    
+    try {
+        // ★ 修正箇所：Software_Pi5 を指定し、安定の 320x240 に変更
+        // 1. ここで Software_Pi5 を指定する。
+        // 2. stream_thread.cpp 内の三項演算子により、エンコーダ名が "libx264" に確定する。
+        // 3. h264_encoder.cpp の初期化処理で libx264 が起動し、すでに記述されている
+        //    超低遅延パラメータ（preset=ultrafast, tune=zerolatency）が自動的に適用される。
+        // =================================================================================
+        /*Hardware_Pi4,Software_Pi5,Camera_PassThrough このどれかを使用。include/stream/stream_thread.hppを参照*/
+        //StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Software_Pi5); //論外
+        //StreamThread stream(server_ip, server_port, 1280, 720, 30, EncodeMode::Software_Pi5);かなり重い
+        //StreamThread stream(server_ip, server_port, 800, 600, 30, EncodeMode::Software_Pi5);かなり重い
+        //StreamThread stream(server_ip, server_port, 640, 480, 30, EncodeMode::Software_Pi5);
+        StreamThread stream(server_ip, server_port, 320, 240, 30, EncodeMode::Software_Pi5);
+        
+        stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
+
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
+        stream.stop();
     } catch (const std::exception& e) {
         std::cerr << "エラー: " << e.what() << std::endl;
         return -1;
