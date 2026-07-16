@@ -30,6 +30,7 @@ set(SOURCE_FILES
     src/stream/pass_through_encoder.cpp
     src/stream/udp_streamer.cpp
     src/stream/stream_thread.cpp
+    src/stream/control_receiver.cpp
 )
 
 # === 実行ファイルの作成 ===

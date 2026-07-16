@@ -3,3 +3,6 @@ all_source_code_client.txt
 .vscode/
 .DS_Store
 log/
+Doxyfile
+monitor.py
+html/
