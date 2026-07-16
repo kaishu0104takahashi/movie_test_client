@@ -6,18 +6,15 @@
 #include <sys/socket.h>
 #include <cstdlib>
 
-ControlReceiver::ControlReceiver(int car_port, int cam_port, bool enable_logging)
-    : car_port_(car_port), cam_port_(cam_port), enable_logging_(enable_logging) {
+ControlReceiver::ControlReceiver(int local_car_port, int local_cam_port, const std::string& target_ip, int target_car_port, int target_cam_port, bool enable_logging)
+    : local_car_port_(local_car_port), local_cam_port_(local_cam_port), target_ip_(target_ip), target_car_port_(target_car_port), target_cam_port_(target_cam_port), enable_logging_(enable_logging) {
     
     // ターミナルの自動起動（ロギング有効時のみ）
     if (enable_logging_) {
-        // 一度ログファイルを空にする
         std::ofstream ofs("control_log.txt", std::ios::trunc);
         ofs << "--- Control Data Log Started ---\n";
         ofs.close();
 
-        // ラズパイの標準ターミナル(lxterminal)を別窓で起動し、ログをリアルタイム表示させる
-        // ※SSH等でGUIがない環境の場合は失敗しますが、プログラム自体は止まりません。
         int ret = std::system("lxterminal -e 'tail -f control_log.txt' &");
         (void)ret; // 戻り値の未使用警告を回避
     }
@@ -45,25 +42,37 @@ VehicleControlState ControlReceiver::get_current_state() {
 
 void ControlReceiver::car_receive_loop() {
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    sockaddr_in local_addr{};
+    sockaddr_in local_addr{}, target_addr{};
+    
+    // 受信用の設定
     local_addr.sin_family = AF_INET;
-    local_addr.sin_port = htons(car_port_);
+    local_addr.sin_port = htons(local_car_port_);
     local_addr.sin_addr.s_addr = INADDR_ANY;
     bind(sock, (struct sockaddr*)&local_addr, sizeof(local_addr));
 
     struct timeval tv = {0, 100000}; // 100ms timeout
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    unsigned char buf[4];
+    // 転送先（マイコン）の設定
+    target_addr.sin_family = AF_INET;
+    target_addr.sin_port = htons(target_car_port_);
+    inet_pton(AF_INET, target_ip_.c_str(), &target_addr.sin_addr);
+
+    unsigned char buf[8];
     while (keep_running_) {
         ssize_t len = recv(sock, buf, sizeof(buf), 0);
-        if (len == 4) {
-            std::lock_guard<std::mutex> lock(mtx_);
-            // 送信側(Ras4)の 126 + int(val*126) の式を逆算して元に戻す
-            state_.steer = (buf[0] - 126.0f) / 126.0f;
-            state_.throttle = (buf[1] - 126.0f) / 126.0f;
-            state_.brake = (buf[2] - 126.0f) / 126.0f;
-            state_.horn = buf[3];
+        if (len > 0) {
+            // ★ 受信した「生のバイトデータ」を変形させずにそのままマイコンへ転送（リレー）
+            sendto(sock, buf, len, 0, (struct sockaddr*)&target_addr, sizeof(target_addr));
+
+            // ログ確認用に内部で数値を計算して保持（※マイコンへ送るデータには影響しません）
+            if (len >= 4) {
+                std::lock_guard<std::mutex> lock(mtx_);
+                state_.steer = (buf[0] - 126.0f) / 126.0f;
+                state_.throttle = (buf[1] - 126.0f) / 126.0f;
+                state_.brake = (buf[2] - 126.0f) / 126.0f;
+                state_.horn = buf[3];
+            }
         }
     }
     close(sock);
@@ -71,21 +80,31 @@ void ControlReceiver::car_receive_loop() {
 
 void ControlReceiver::cam_receive_loop() {
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    sockaddr_in local_addr{};
+    sockaddr_in local_addr{}, target_addr{};
+    
     local_addr.sin_family = AF_INET;
-    local_addr.sin_port = htons(cam_port_);
+    local_addr.sin_port = htons(local_cam_port_);
     local_addr.sin_addr.s_addr = INADDR_ANY;
     bind(sock, (struct sockaddr*)&local_addr, sizeof(local_addr));
 
     struct timeval tv = {0, 100000};
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    unsigned char buf[1];
+    target_addr.sin_family = AF_INET;
+    target_addr.sin_port = htons(target_cam_port_);
+    inet_pton(AF_INET, target_ip_.c_str(), &target_addr.sin_addr);
+
+    unsigned char buf[8];
     while (keep_running_) {
         ssize_t len = recv(sock, buf, sizeof(buf), 0);
-        if (len == 1) {
-            std::lock_guard<std::mutex> lock(mtx_);
-            state_.cam_on = buf[0];
+        if (len > 0) {
+            // ★ カメラON/OFFデータも同様に転送
+            sendto(sock, buf, len, 0, (struct sockaddr*)&target_addr, sizeof(target_addr));
+
+            if (len >= 1) {
+                std::lock_guard<std::mutex> lock(mtx_);
+                state_.cam_on = buf[0];
+            }
         }
     }
     close(sock);
@@ -99,7 +118,6 @@ void ControlReceiver::logging_loop() {
             current = state_;
         }
 
-        // ログファイルへ追記
         std::ofstream ofs("control_log.txt", std::ios::app);
         if (ofs.is_open()) {
             ofs << "STR: " << current.steer 
@@ -111,7 +129,6 @@ void ControlReceiver::logging_loop() {
             ofs.close();
         }
         
-        // 約10fps相当（100ms間隔）で出力
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }

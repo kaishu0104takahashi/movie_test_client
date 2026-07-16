@@ -5,7 +5,7 @@
 #include <chrono>
 
 #include "stream/stream_thread.hpp"
-#include "stream/control_receiver.hpp"
+#include "stream/control_receiver.hpp" // ★ 追加
 
 std::atomic<bool> keep_running(true);
 void signal_handler(int) {
@@ -14,35 +14,39 @@ void signal_handler(int) {
 
 int main() {
     std::signal(SIGINT, signal_handler);
-    std::cout << "--- 映像伝送 Client 起動 (4GPi最適化・操作受信対応版) ---" << std::endl;
+    std::cout << "--- 映像伝送 Client 起動 (マルチスレッド完全版) ---" << std::endl;
 
-    // ★ログの別ターミナル表示をONにするかどうかのフラグ
-    // 本番稼働時（確認が不要になったら）ここを false に変更してください。
-    bool show_terminal_log = true;
-
-    // 操作信号の受信用モジュールを起動（5005番と5678番）
-    ControlReceiver ctrl_receiver(5005, 5678, show_terminal_log);
-
+    // 映像配信用（コックピット側）のIPアドレス
     std::string server_ip = "192.168.77.234"; 
     int server_port = 1234;
+
+    // ★追加箇所：車両内制御マイコンのIPアドレス
+    std::string vehicle_ip = "192.168.77.99";
+
+    // ログの別ターミナル表示をONにするかどうかのフラグ
+    bool show_terminal_log = false;
+
+    // ★追加箇所：操作信号の受信用モジュールを起動し、指定IPへ転送させる
+    // (自機の5005,5678番で受信し、vehicle_ipの5005,5678番へ中継する)
+    ControlReceiver ctrl_receiver(5005, 5678, vehicle_ip, 5005, 5678, show_terminal_log);
     
     try {
-        /* Hardware_Pi4, Software_Pi5, Camera_PassThrough のいずれかを使用 */
         StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Software_Pi5);
+        
         stream.start();
+        std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
 
         while (keep_running) {
-            // 将来的には、ここで ctrl_receiver.get_current_state() を呼び出して
-            // 最新の操作値を取得し、モーター制御基板（GPIOやシリアル）へ送る処理を追記します。
-            
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
+        std::cout << "\n終了シグナルを受信。スレッドを停止します..." << std::endl;
         stream.stop();
+        
     } catch (const std::exception& e) {
-        std::cerr << "エラーが発生しました: " << e.what() << std::endl;
+        std::cerr << "エラー: " << e.what() << std::endl;
+        return -1;
     }
 
-    std::cout << "Client を終了します。" << std::endl;
     return 0;
 }
