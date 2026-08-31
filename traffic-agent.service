@@ -1,0 +1,11 @@
+[Unit]
+Description=Traffic Agent for Client Ras5
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/rpi5-client/traffic_agent.py
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
