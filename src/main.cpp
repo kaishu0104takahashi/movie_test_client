@@ -5,7 +5,7 @@
 #include <chrono>
 
 #include "stream/stream_thread.hpp"
-#include "stream/control_receiver.hpp" // ★ 追加
+#include "stream/control_receiver.hpp"
 
 std::atomic<bool> keep_running(true);
 void signal_handler(int) {
@@ -20,19 +20,17 @@ int main() {
     std::string server_ip = "192.168.77.234"; 
     int server_port = 1234;
 
-    // ★追加箇所：車両内制御マイコンのIPアドレス
+    // 車両内制御マイコンのIPアドレス
     std::string vehicle_ip = "192.168.77.99";
 
     // ログの別ターミナル表示をONにするかどうかのフラグ
     bool show_terminal_log = false;
 
-    // ★追加箇所：操作信号の受信用モジュールを起動し、指定IPへ転送させる
-    // (自機の5005,5678番で受信し、vehicle_ipの5005,5678番へ中継する)
-    ControlReceiver ctrl_receiver(5005, 5678, vehicle_ip, 5005, 5678, show_terminal_log);
+    // ★修正箇所：廃止された5678番ポートを削り、5005番のみで起動する
+    ControlReceiver ctrl_receiver(5005, vehicle_ip, 5005, show_terminal_log);
     
     try {
-        StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Software_Pi5);
-        
+        StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Camera_PassThrough);
         stream.start();
         std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
 
