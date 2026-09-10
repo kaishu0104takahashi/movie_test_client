@@ -17,12 +17,16 @@ int main() {
     std::cout << "--- 映像伝送 Client 起動 (マルチスレッド完全版) ---" << std::endl;
 
     // 映像配信用（コックピット側）のIPアドレス
-    //std::string server_ip = "219.112.66.122"; 
-    std::string server_ip = "192.168.77.234"; 
+    std::string server_ip = "219.112.66.122"; 
+    //std::string server_ip = "192.168.77.234"; 
     int server_port = 1234;
 
     // 車両内制御マイコンのIPアドレス
-    std::string vehicle_ip = "192.168.77.99";
+    //実車用
+    std::string vehicle_ip = "192.168.1.18";
+
+    //教室用
+    //std::string vehicle_ip = "192.168.77.99";
 
     // ログの別ターミナル表示をONにするかどうかのフラグ
     bool show_terminal_log = false;
@@ -32,6 +36,7 @@ int main() {
     
     try {
         StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Camera_PassThrough);
+	//StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Software_Pi5);
         stream.start();
         std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
 

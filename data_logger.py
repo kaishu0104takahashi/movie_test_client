@@ -157,7 +157,7 @@ if __name__ == "__main__":
     LIMIT_GB = 50.0  # 1ヶ月の制限値
     
     # 今月の使用量（GB）を取得 (今回は eth0 を指定)
-    used_gb = get_traffic_gb("eth0")
+    used_gb = get_traffic_gb("wwan0")
     
     # 残りの容量を計算 (エラーのマイナス値でない場合のみ計算)
     if used_gb >= 0:
