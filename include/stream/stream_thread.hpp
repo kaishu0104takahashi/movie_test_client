@@ -30,6 +30,9 @@ public:
     void start();
     void stop();
 
+    // ★追加: 映像の取得・送信を動的に切り替える設定関数
+    void set_active(bool active);
+
 private:
     std::string server_ip_;
     int server_port_;
@@ -40,6 +43,9 @@ private:
 
     std::thread worker_;
     std::atomic<bool> stop_flag_{false};
+    
+    // ★追加: 配信のON/OFF状態を保持するフラグ（起動時はOFF待機）
+    std::atomic<bool> active_{false}; 
 
     void thread_loop();
 };

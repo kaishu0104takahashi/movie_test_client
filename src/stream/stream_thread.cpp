@@ -20,6 +20,11 @@ void StreamThread::stop() {
     if (worker_.joinable()) worker_.join();
 }
 
+// ★追加: 外部からフラグを更新するための関数
+void StreamThread::set_active(bool active) {
+    active_.store(active, std::memory_order_relaxed);
+}
+
 void StreamThread::thread_loop() {
     try {
         std::cout << "[裏方スレッド] 部品を初期化中..." << std::endl;
@@ -44,31 +49,52 @@ void StreamThread::thread_loop() {
         V4L2Capture::Frame frame;
         frame.data.resize(width_ * height_ * 2);
 
-        // ★ FFmpegの空パケットを1つだけ用意し、これを無限に使い回す（究極のゼロコピー）
         AVPacket* pkt = av_packet_alloc();
 
-        camera.stream_on();
-        std::cout << "[裏方スレッド] >>> 配信開始！宛先: " << server_ip_ << ":" << server_port_ << " <<<" << std::endl;
+        bool current_active = false;
+        std::cout << "[裏方スレッド] >>> 配信準備完了！宛先: " << server_ip_ << ":" << server_port_ << " (カメラON待機中) <<<" << std::endl;
 
         while (!stop_flag_.load(std::memory_order_relaxed)) {
-            if (camera.capture_frame(frame) && frame.valid_size > 0) {
-                
-                // 1. まず生データをエンコーダに投げ込む (send)
-                if (encoder->send_frame(frame.data.data(), frame.valid_size)) {
-                    
-                    // 2. ★超重要：エンコーダ内に溜まったデータを「空になるまで(while)」全て取り出す！
-                    while (encoder->receive_packet(pkt)) {
-                        streamer.send_packet(pkt);
-                    }
+            // 現在設定されているべきカメラ状態を取得
+            bool target_active = active_.load(std::memory_order_relaxed);
+
+            // 状態が切り替わった瞬間のみ、カメラの起動/停止を実行する
+            if (target_active != current_active) {
+                if (target_active) {
+                    camera.stream_on();
+                    std::cout << "[裏方スレッド] カメラ配信を [開始] しました！" << std::endl;
+                } else {
+                    camera.stream_off();
+                    std::cout << "[裏方スレッド] カメラ配信を [停止] しました。" << std::endl;
                 }
-            } else {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                current_active = target_active;
+            }
+
+            // カメラがONの時だけキャプチャと送信を行う
+            if (current_active) {
+                if (camera.capture_frame(frame) && frame.valid_size > 0) {
+                    if (encoder->send_frame(frame.data.data(), frame.valid_size)) {
+                        while (encoder->receive_packet(pkt)) {
+                            streamer.send_packet(pkt);
+                        }
+                    }
+                } else {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            } 
+            // カメラがOFFの時は負荷を極限まで下げるために長めに休む
+            else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
         }
 
-        camera.stream_off();
-        av_packet_free(&pkt); // 最後に箱を解体
-        std::cout << "[裏方スレッド] --- 配信を安全に終了しました ---" << std::endl;
+        // プログラム終了時、もしカメラがONなら安全にOFFにする
+        if (current_active) {
+            camera.stream_off();
+        }
+        
+        av_packet_free(&pkt); 
+        std::cout << "[裏方スレッド] --- 配信スレッドを安全に終了しました ---" << std::endl;
 
     } catch (const std::exception& e) {
         std::cerr << "\n[裏方スレッド 致命的エラー] " << e.what() << std::endl;

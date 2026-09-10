@@ -17,30 +17,34 @@ int main() {
     std::cout << "--- 映像伝送 Client 起動 (マルチスレッド完全版) ---" << std::endl;
 
     // 映像配信用（コックピット側）のIPアドレス
-    std::string server_ip = "219.112.66.122"; 
-    //std::string server_ip = "192.168.77.234"; 
+    //実車用
+    //std::string server_ip = "219.112.66.122"; 
+    //教室用
+    std::string server_ip = "192.168.77.234";
     int server_port = 1234;
 
     // 車両内制御マイコンのIPアドレス
     //実車用
-    std::string vehicle_ip = "192.168.1.18";
-
+    //std::string vehicle_ip = "192.168.1.18";
+    
     //教室用
-    //std::string vehicle_ip = "192.168.77.99";
+    std::string vehicle_ip = "192.168.77.99";
 
     // ログの別ターミナル表示をONにするかどうかのフラグ
     bool show_terminal_log = false;
 
-    // ★修正箇所：廃止された5678番ポートを削り、5005番のみで起動する
     ControlReceiver ctrl_receiver(5005, vehicle_ip, 5005, show_terminal_log);
     
     try {
         StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Camera_PassThrough);
-	//StreamThread stream(server_ip, server_port, 1920, 1080, 30, EncodeMode::Software_Pi5);
         stream.start();
         std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
 
         while (keep_running) {
+            // ★追加: 操作情報からカメラのON/OFF状態を取得し、配信スレッドに伝達する
+            VehicleControlState state = ctrl_receiver.get_current_state();
+            stream.set_active(state.cam_on == 1);
+            
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
