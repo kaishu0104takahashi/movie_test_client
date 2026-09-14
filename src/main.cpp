@@ -18,17 +18,17 @@ int main() {
 
     // 映像配信用（コックピット側）のIPアドレス
     //実車用
-    //std::string server_ip = "219.112.66.122"; 
+    std::string server_ip = "219.112.66.122"; 
     //教室用
-    std::string server_ip = "192.168.77.234";
+    //std::string server_ip = "192.168.77.234";
     int server_port = 1234;
 
     // 車両内制御マイコンのIPアドレス
     //実車用
-    //std::string vehicle_ip = "192.168.1.18";
+    std::string vehicle_ip = "192.168.1.18";
     
     //教室用
-    std::string vehicle_ip = "192.168.77.99";
+    //std::string vehicle_ip = "192.168.77.99";
 
     // ログの別ターミナル表示をONにするかどうかのフラグ
     bool show_terminal_log = false;

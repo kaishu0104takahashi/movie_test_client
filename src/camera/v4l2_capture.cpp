@@ -72,7 +72,7 @@
  
      spdlog::info("initialized: {} ({}x{})", device_file_name_, width_, height_);
  
-     // ★追加：ここでオートフォーカスをオフにする（マニュアルフォーカス化）
+     // オートフォーカスをオフにする（マニュアルフォーカス化）
      disable_autofocus();
  
      try {
@@ -179,6 +179,16 @@
  // =====================================================================
  void V4L2Capture::stream_on()
  {
+     // ★追加: STREAMOFFで空になった「映像の受け皿(バッファ)」を再度セットし直す
+     for (size_t i = 0; i < buffers_.size(); ++i) {
+         v4l2_buffer buf{};
+         buf.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+         buf.memory = V4L2_MEMORY_MMAP;
+         buf.index  = i;
+         // 既にセット済み(初回起動時など)の場合のエラーは無視して進める
+         xioctl(device_fd_, VIDIOC_QBUF, &buf);
+     }
+
      v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
      if (xioctl(device_fd_, VIDIOC_STREAMON, &type) < 0) {
          throw std::system_error(errno, std::generic_category(), "VIDIOC_STREAMON failed");
@@ -327,7 +337,7 @@
  }
  
  // =====================================================================
- // ★追加：オートフォーカスの無効化（マニュアルフォーカス化）
+ // オートフォーカスの無効化（マニュアルフォーカス化）
  // =====================================================================
  void V4L2Capture::disable_autofocus()
  {
