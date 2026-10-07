@@ -25,10 +25,10 @@ int main() {
 
     // 車両内制御マイコンのIPアドレス
     //実車用
-    std::string vehicle_ip = "192.168.1.18";
+    //std::string vehicle_ip = "192.168.1.18";
     
     //教室用 削除禁止
-    //std::string vehicle_ip = "192.168.77.99";
+    std::string vehicle_ip = "192.168.77.99";
 
     // ログの別ターミナル表示をONにするかどうかのフラグ
     bool show_terminal_log = false;
