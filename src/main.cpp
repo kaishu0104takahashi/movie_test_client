@@ -27,15 +27,13 @@ int main() {
     //実車用
     std::string vehicle_ip = "192.168.1.18";
     
-    //教室用　削除禁止
+    //教室用 削除禁止
     //std::string vehicle_ip = "192.168.77.99";
 
     // ログの別ターミナル表示をONにするかどうかのフラグ
     bool show_terminal_log = false;
 
     // 操作信号と距離センサの受信用モジュールを起動
-    // (操作受信ポート:5005, 車両IP, 車両操作ポート:5005,
-    //  距離受信ポート:3000, サーバーIP, サーバー距離ポート:3000)
     ControlReceiver ctrl_receiver(5005, vehicle_ip, 5005, 
                                   3000, server_ip, 3000, 
                                   show_terminal_log);
@@ -45,7 +43,14 @@ int main() {
         stream.start();
         std::cout << "(終了するには Ctrl+C を押してください)\n" << std::endl;
 
+        // ★★★ ここが修正ポイント ★★★
         while (keep_running) {
+            // ControlReceiver から最新の操作状態（カメラフラグ含む）を取得
+            VehicleControlState state = ctrl_receiver.get_current_state();
+            
+            // カメラフラグが 1 なら映像配信をON、0ならOFFにする
+            stream.set_active(state.cam_on == 1);
+            
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
