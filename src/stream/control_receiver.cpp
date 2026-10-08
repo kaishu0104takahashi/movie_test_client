@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <cstdlib>
+#include <chrono> // 時間計測用に追加
 
 ControlReceiver::ControlReceiver(int local_car_port, const std::string& vehicle_ip, int target_car_port,
                                  int local_dist_port, const std::string& server_ip, int target_dist_port,
@@ -25,7 +26,7 @@ ControlReceiver::ControlReceiver(int local_car_port, const std::string& vehicle_
 
     // スレッドの起動
     car_thread_ = std::thread(&ControlReceiver::car_receive_loop, this);
-    dist_thread_ = std::thread(&ControlReceiver::dist_receive_loop, this); // 距離センサ中継用スレッド起動
+    dist_thread_ = std::thread(&ControlReceiver::dist_receive_loop, this);
     
     if (enable_logging_) {
         log_thread_ = std::thread(&ControlReceiver::logging_loop, this);
@@ -95,27 +96,38 @@ void ControlReceiver::dist_receive_loop() {
     local_addr.sin_addr.s_addr = INADDR_ANY;
     bind(sock, (struct sockaddr*)&local_addr, sizeof(local_addr));
 
-    struct timeval tv = {0, 100000}; // 100ms timeout
+    // ★修正: recvでブロックしないよう、タイムアウトを10ms(非常に短く)設定
+    struct timeval tv = {0, 10000}; 
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    // 転送先（ras5-server）の設定
+    // 転送先（ras5-server）の3000番ポート設定
     target_addr.sin_family = AF_INET;
     target_addr.sin_port = htons(target_dist_port_);
     inet_pton(AF_INET, server_ip_.c_str(), &target_addr.sin_addr);
 
     unsigned char buf[1];
+    
+    // ★修正: 送信タイミングを独立管理するためのタイマー
+    auto last_send_time = std::chrono::steady_clock::now();
+
     while (keep_running_) {
-        // 車体から1バイトの距離フラグを受信
+        // 1. 車載マイコン(vehicle)からのデータ受信を試みる（無ければ10msでスルー）
         ssize_t len = recv(sock, buf, sizeof(buf), 0);
         if (len == 1) {
-            // 受信したフラグ（1または0）をそのまま ras5-server へUDP送信
-            sendto(sock, buf, len, 0, (struct sockaddr*)&target_addr, sizeof(target_addr));
+            std::lock_guard<std::mutex> lock(mtx_);
+            state_.distance_alert = buf[0];
+        }
 
-            // ログ確認用に内部状態を更新
+        // 2. ★修正: 100msごとに、必ず rpi5-server へ現在の距離センサ状態(生存確認)を送る
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_send_time).count() >= 100) {
+            unsigned char send_buf[1];
             {
                 std::lock_guard<std::mutex> lock(mtx_);
-                state_.distance_alert = buf[0];
+                send_buf[0] = state_.distance_alert;
             }
+            sendto(sock, send_buf, 1, 0, (struct sockaddr*)&target_addr, sizeof(target_addr));
+            last_send_time = now;
         }
     }
     close(sock);
